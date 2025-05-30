@@ -1,9 +1,15 @@
+require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
+const RecordingProcessor = require('./recording-processor');
+
 const app = express();
 app.use(express.json());
 
-app.post('/zoom-webhook', (req, res) => {
+// Initialize the recording processor
+const recordingProcessor = new RecordingProcessor();
+
+app.post('/zoom-webhook', async (req, res) => {
   const event = req.body.event;
   const payload = req.body.payload;
 
@@ -30,15 +36,32 @@ app.post('/zoom-webhook', (req, res) => {
   // Handle recording completed event
   if (event === 'recording.completed') {
     console.log('Recording completed:', payload);
-    const recordingFiles = payload.object.recording_files;
-    recordingFiles.forEach(file => {
-      console.log('Recording file URL:', file.download_url);
-    });
+    
+    // Process the recording asynchronously
+    recordingProcessor.processWebhookPayload(payload)
+      .then(result => {
+        console.log('✅ Recording processed successfully:', result);
+      })
+      .catch(error => {
+        console.error('❌ Error processing recording:', error.message);
+        console.error('Stack:', error.stack);
+      });
+    
+    // Respond to Zoom immediately (important!)
     return res.status(200).send('Webhook processed');
   }
 
   // Default response for other events
   res.status(200).send('Webhook processed');
+});
+
+// Add a health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    service: 'IL Zoom Webhook',
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.listen(process.env.PORT || 3000, () => {

@@ -16,9 +16,6 @@ if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_BASE64) {
 }
 
 class RecordingProcessor {
-    // ... rest of the code
-
-class RecordingProcessor {
     constructor() {
         // Zoom credentials
         this.zoomAccountId = process.env.ZOOM_ACCOUNT_ID;

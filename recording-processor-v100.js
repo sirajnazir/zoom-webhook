@@ -1766,22 +1766,10 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
     async getOrCreateFolder(parentId, folderName) {
         const cacheKey = `${parentId}/${folderName}`;
         
-        console.log('DEBUG getOrCreateFolder called with:', {
-            folderName,
-            parentId,  // <-- Changed from parentFolderId to parentId
-            expectedParent: process.env.DRIVE_ROOT_FOLDER_ID
-        });
-        
-        // If parentId is the mysterious one
-        if (parentId === '1wAaOiXWwqQdoc2xawbgG1N44u7Hl9Rgp') {  // <-- Changed to parentId
-            console.log('WARNING: Using orphaned folder ID!');
-            console.trace('Stack trace to find caller:');
-        }
-    
         if (this.folderCache.has(cacheKey)) {
             return this.folderCache.get(cacheKey);
         }
-    
+
         const query = `name='${folderName.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
         
         try {
@@ -1797,12 +1785,6 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
                 return folderId;
             }
         } catch (error) {
-            // ADD THE QUICK FIX HERE:
-            if (error.message && error.message.includes('File not found') && parentId === '1wAaOiXWwqQdoc2xawbgG1N44u7Hl9Rgp') {
-                console.log('Folder not found, using root folder instead');
-                // Recursively call with the correct parent folder
-                return this.getOrCreateFolder(process.env.DRIVE_ROOT_FOLDER_ID, folderName);
-            }
             console.error(`Error checking folder: ${error.message}`);
         }
 
@@ -2021,6 +2003,7 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
 
 }
 
+// Export for use in other files
 export default RecordingProcessor;
 
 // If run directly, process from command line

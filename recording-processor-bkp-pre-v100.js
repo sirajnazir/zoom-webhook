@@ -1,16 +1,8 @@
-import dotenv from 'dotenv';
-import axios from 'axios';
-import { google } from 'googleapis';
-import { JWT } from 'google-auth-library';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
-
-dotenv.config();
-
-// Get __dirname equivalent for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+require('dotenv').config();
+const axios = require('axios');
+const { google } = require('googleapis');
+const { JWT } = require('google-auth-library');
+const path = require('path');
 
 // Handle SECRET_TOKEN for webhook secret
 if (process.env.SECRET_TOKEN && !process.env.WEBHOOK_SECRET) {
@@ -20,10 +12,9 @@ if (process.env.SECRET_TOKEN && !process.env.WEBHOOK_SECRET) {
 // ADD THIS CODE BLOCK HERE - This decodes the key when the app starts
 if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_BASE64) {
     const keyJson = Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_KEY_BASE64, 'base64').toString();
-    fs.writeFileSync('./service-account-key.json', keyJson);
+    require('fs').writeFileSync('./service-account-key.json', keyJson);
     console.log('✓ Service account key decoded');
 }
-
 
 class RecordingProcessor {
     constructor() {
@@ -67,10 +58,9 @@ class RecordingProcessor {
                 const keyJson = Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_KEY_BASE64, 'base64').toString();
                 key = JSON.parse(keyJson);
                 // Also write it for compatibility
-                fs.writeFileSync('./service-account-key.json', keyJson);
+                require('fs').writeFileSync('./service-account-key.json', keyJson);
             } else {
-                const keyContent = fs.readFileSync('./service-account-key.json', 'utf8');
-                key = JSON.parse(keyContent);
+                key = require('./service-account-key.json');
             }
             
             // Create JWT client with subject (impersonation)
@@ -205,21 +195,9 @@ class RecordingProcessor {
         return this.tokenCache.token;
     }
 
+    // Smart logic functions from ConvertNames.py
     extractCoachFromRecordingInfo(topic, hostEmail, participantInfo = null) {
         const topicLower = topic.toLowerCase();
-        
-        // First check if it's a Siraj recording
-        if (this.isSirajRecording(topic)) {
-            return "Siraj";
-        }
-        
-        // Split topic into parts for pattern matching
-        const parts = topic.split('_');
-        
-        // Check if first part is a known coach name (highest confidence)
-        if (parts.length >= 2 && this.knownCoachNames.has(parts[0].toLowerCase())) {
-            return this.capitalizeWord(parts[0]);
-        }
         
         // Enhanced coach patterns
         const coachPatterns = [
@@ -243,15 +221,7 @@ class RecordingProcessor {
             }
         }
         
-        // Pattern 2: Look for known coach names in any position
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i].toLowerCase();
-            if (this.knownCoachNames.has(part)) {
-                return this.capitalizeWord(parts[i]);
-            }
-        }
-        
-        // Pattern 3: Look for known coach names in topic
+        // Pattern 2: Look for known coach names in topic
         const words = topicLower.split(/[_\s\-]+/);
         for (const word of words) {
             const cleanWord = word.replace(/[^a-z]/g, '');
@@ -260,7 +230,7 @@ class RecordingProcessor {
             }
         }
         
-        // Pattern 4: Check host email
+        // Pattern 3: Check host email
         if (hostEmail && this.isCoachEmail(hostEmail)) {
             const emailName = hostEmail.split('@')[0];
             const firstName = emailName.split('.')[0];
@@ -269,7 +239,7 @@ class RecordingProcessor {
             }
         }
         
-        // Pattern 5: Check participant info if available
+        // Pattern 4: Check participant info if available
         if (participantInfo && Array.isArray(participantInfo)) {
             for (const participant of participantInfo) {
                 if (participant.email && this.isCoachEmail(participant.email)) {
@@ -286,36 +256,6 @@ class RecordingProcessor {
     }
 
     extractStudentFromRecordingInfo(topic, coach = null) {
-        // Split topic into parts for better pattern matching
-        const parts = topic.split('_');
-        
-        // If we have a coach and it's at position 0, look for student after
-        if (coach && parts.length >= 3 && parts[0].toLowerCase() === coach.toLowerCase()) {
-            // Remove coach part and any numeric parts
-            const remainingParts = parts.slice(1).filter(part => !part.match(/^\d+$/));
-            
-            if (remainingParts.length >= 2) {
-                // Check for hyphenated last names
-                const hyphenatedIndex = remainingParts.findIndex(part => part.includes('-'));
-                
-                if (hyphenatedIndex > 0) {
-                    const firstName = remainingParts[hyphenatedIndex - 1];
-                    const lastName = remainingParts[hyphenatedIndex];
-                    
-                    // Filter out company names
-                    const fullName = `${this.capitalizeWord(firstName)} ${this.capitalizeWord(lastName)}`;
-                    if (!this.isCompanyName(fullName)) {
-                        return fullName;
-                    }
-                } else if (remainingParts.length === 2) {
-                    const fullName = `${this.capitalizeWord(remainingParts[0])} ${this.capitalizeWord(remainingParts[1])}`;
-                    if (!this.isCompanyName(fullName)) {
-                        return fullName;
-                    }
-                }
-            }
-        }
-        
         // Enhanced student patterns
         const patterns = [
             /____([a-z]+)___/i,
@@ -325,7 +265,7 @@ class RecordingProcessor {
             /student[_\s]*[:_-]?\s*([a-z]+(?:[_\s]+[a-z]+)?)/i,
             /([a-z]+(?:[_\s]+[a-z]+)?)[_\s]*(?:week|wk|session)/i,
             /meeting[_\s]+with[_\s]+([a-z]+(?:[_\s]+[a-z]+)?)/i,
-            /([a-z]+(?:[_\s]+[a-z]+)?)[_\s]*x[_\s]*([a-z]+)/i
+            /([a-z]+(?:[_\s]+[a-z]+)?)[_\s]*x[_\s]*([a-z]+)/i // Pattern: StudentName x CoachName
         ];
         
         for (const pattern of patterns) {
@@ -333,10 +273,7 @@ class RecordingProcessor {
             if (match) {
                 const studentName = match[1];
                 if (!coach || studentName.toLowerCase() !== coach.toLowerCase()) {
-                    const formattedName = studentName.split('_').map(w => this.capitalizeWord(w)).join(' ');
-                    if (!this.isCompanyName(formattedName)) {
-                        return formattedName;
-                    }
+                    return studentName.split('_').map(w => this.capitalizeWord(w)).join(' ');
                 }
             }
         }
@@ -349,9 +286,7 @@ class RecordingProcessor {
             if (match) {
                 const studentName = match[1];
                 if (!['week', 'wk', 'meeting', 'zoom', 'game', 'plan', 'prep'].includes(studentName.toLowerCase())) {
-                    if (!this.isCompanyName(studentName)) {
-                        return this.capitalizeWord(studentName);
-                    }
+                    return this.capitalizeWord(studentName);
                 }
             }
         }
@@ -493,119 +428,6 @@ class RecordingProcessor {
         return result;
     }
     
-// Enhanced timeline parsing with company name filtering
-    parseTimelineForParticipantsEnhanced(timelineData) {
-        const result = { 
-            coach: null, 
-            student: null,
-            participants: [],
-            confidence: {
-                coach: 0,
-                student: 0
-            },
-            isIvylevel: false
-        };
-        const usersFound = new Map();
-        
-        try {
-            if (timelineData && timelineData.timeline && Array.isArray(timelineData.timeline)) {
-                let hasOnlyContactEmail = true;
-                let hasOtherCoachEmail = false;
-                
-                // Collect all unique users from timeline events
-                for (const event of timelineData.timeline) {
-                    if (event.users && Array.isArray(event.users)) {
-                        for (const user of event.users) {
-                            if (user && user.username) {
-                                const username = user.username;
-                                const email = user.email_address || '';
-                                const userId = user.zoom_userid || user.user_id || email || username;
-                                
-                                // Skip numeric usernames, 'Ivylevel', or company names
-                                if (username.match(/^\d+$/) || 
-                                    username.toLowerCase() === 'ivylevel' ||
-                                    this.isCompanyName(username)) {
-                                    continue;
-                                }
-                                
-                                // Check for contact@ivymentors.co scenario
-                                if (email && email.includes('@ivymentors.co')) {
-                                    if (email !== 'contact@ivymentors.co') {
-                                        hasOtherCoachEmail = true;
-                                    }
-                                } else if (email) {
-                                    hasOnlyContactEmail = false;
-                                }
-                                
-                                usersFound.set(userId, {
-                                    username: username,
-                                    email: email,
-                                    isCoach: this.isLikelyCoach(username, email)
-                                });
-                            }
-                        }
-                    }
-                }
-                
-                // Check if only contact@ivymentors.co is present (Ivylevel scenario)
-                if (hasOnlyContactEmail && !hasOtherCoachEmail) {
-                    result.isIvylevel = true;
-                }
-                
-                // Categorize users
-                const coaches = [];
-                const students = [];
-                
-                for (const [userId, userInfo] of usersFound) {
-                    result.participants.push(userInfo);
-                    
-                    if (userInfo.isCoach) {
-                        coaches.push(userInfo.username);
-                    } else {
-                        students.push(userInfo.username);
-                    }
-                }
-                
-                // Select primary coach and student
-                if (result.isIvylevel) {
-                    result.coach = 'Ivylevel';
-                    result.confidence.coach = 0.9;
-                } else if (coaches.length > 0) {
-                    result.coach = coaches[0];
-                    result.confidence.coach = 0.9;
-                }
-                
-                if (students.length > 0) {
-                    // Filter out company names from students
-                    const validStudents = students.filter(s => !this.isCompanyName(s));
-                    if (validStudents.length > 0) {
-                        result.student = validStudents[0];
-                        result.confidence.student = 0.9;
-                    }
-                }
-                
-                // If no coaches found but multiple users exist, use heuristic
-                if (!result.coach && usersFound.size >= 2) {
-                    const usersArray = Array.from(usersFound.values());
-                    const coachUser = usersArray.find(u => u.email && this.isCoachEmail(u.email));
-                    if (coachUser) {
-                        result.coach = coachUser.username;
-                        result.confidence.coach = 0.9;
-                        const studentUser = usersArray.find(u => u.username !== result.coach && !this.isCompanyName(u.username));
-                        if (studentUser) {
-                            result.student = studentUser.username;
-                            result.confidence.student = 0.7;
-                        }
-                    }
-                }
-            }
-        } catch (error) {
-            console.error('Error in parseTimelineForParticipantsEnhanced:', error.message);
-        }
-        
-        return result;
-    }
-
     isLikelyCoach(username, email) {
         if (email && this.isCoachEmail(email)) {
             return true;
@@ -728,77 +550,7 @@ class RecordingProcessor {
             return null;
         }
     }
-    // Enhanced transcript analysis with company name filtering
-async analyzeTranscriptEnhanced(transcriptFileId) {
-    try {
-        console.log('  📝 Enhanced transcript analysis...');
-        
-        const response = await this.drive.files.get({
-            fileId: transcriptFileId,
-            alt: 'media'
-        });
-        
-        const vttContent = response.data.toString();
-        
-        // Parse VTT format
-        const speakers = new Map();
-        const lines = vttContent.split('\n');
-        
-        // Enhanced patterns
-        const nameExtractionPatterns = [
-            /(?:I'm|I am|This is|My name is)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/i,
-            /(?:Coach|Professor|Dr\.?)\s+([A-Z][a-z]+)/i,
-            /Hi\s+([A-Z][a-z]+),?\s+(?:I'm|this is)/i
-        ];
-        
-        for (const line of lines) {
-            if (line.includes(':') && !line.includes('-->')) {
-                const colonIndex = line.indexOf(':');
-                let speaker = line.substring(0, colonIndex).trim();
-                const text = line.substring(colonIndex + 1).trim();
-                
-                // Convert "Ivy Mentors" to "Ivylevel"
-                if (speaker.toLowerCase() === 'ivy mentors') {
-                    speaker = 'Ivylevel';
-                    console.log('   ✓ Converted "Ivy Mentors" to "Ivylevel"');
-                }
-                
-                if (!speakers.has(speaker)) {
-                    speakers.set(speaker, {
-                        messageCount: 0,
-                        possibleNames: new Set()
-                    });
-                }
-                    
-                const speakerData = speakers.get(speaker);
-                speakerData.messageCount++;
-                
-                // Try to extract names
-                for (const pattern of nameExtractionPatterns) {
-                    const match = text.match(pattern);
-                    if (match && !this.isCompanyName(match[1])) {
-                        speakerData.possibleNames.add(match[1]);
-                    }
-                }
-            }
-        }
-        
-        console.log(`  ✓ Identified ${speakers.size} speakers in transcript`);
-        
-        // Detect Ivylevel presence
-        const hasIvylevel = speakers.has('Ivylevel');
-        
-        return {
-            speakers: Array.from(speakers.values()),
-            totalDuration: this.extractDurationFromVTT(vttContent),
-            hasMultipleSpeakers: speakers.size > 1,
-            hasIvylevel: hasIvylevel
-        };
-    } catch (error) {
-        console.error('  Error in enhanced transcript analysis:', error.message);
-        return null;
-    }
-}
+
     extractDurationFromVTT(vttContent) {
         // Extract the last timestamp to get duration
         const timestampPattern = /(\d{2}:\d{2}:\d{2}\.\d{3})\s+-->/g;
@@ -1253,74 +1005,34 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
             metadata.sources.coach = 'siraj_pattern';
             console.log("✓ Detected as Siraj (MISC) recording");
         } else {
-           // Try parsing the timeline file first if it was downloaded
-        let timelineData = null;
-        let timelineParticipants = null;
-        if (tempFiles.length > 0) {
-            const timelineFile = tempFiles.find(f => f.type === 'TIMELINE');
-            if (timelineFile) {
-                console.log('Attempting to extract participant info from timeline file...');
-                try {
-                    // Download the timeline content from Drive to parse it
-                    const timelineContent = await this.drive.files.get({
-                        fileId: timelineFile.fileId,
-                        alt: 'media'
-                    });
-                    
-                    if (timelineContent.data) {
-                        const timelineJson = JSON.parse(timelineContent.data);
-                        timelineData = this.parseTimelineForParticipants(timelineJson);
-                        // Also run enhanced parsing
-                        timelineParticipants = this.parseTimelineForParticipantsEnhanced(timelineJson);
+            // Try parsing the timeline file first if it was downloaded
+            let timelineData = null;
+            if (tempFiles.length > 0) {
+                const timelineFile = tempFiles.find(f => f.type === 'TIMELINE');
+                if (timelineFile) {
+                    console.log('Attempting to extract participant info from timeline file...');
+                    try {
+                        // Download the timeline content from Drive to parse it
+                        const timelineContent = await this.drive.files.get({
+                            fileId: timelineFile.fileId,
+                            alt: 'media'
+                        });
+                        
+                        if (timelineContent.data) {
+                            const timelineJson = JSON.parse(timelineContent.data);
+                            timelineData = this.parseTimelineForParticipants(timelineJson);
+                        }
+                    } catch (error) {
+                        console.error('Error parsing timeline file:', error.message);
                     }
-                } catch (error) {
-                    console.error('Error parsing timeline file:', error.message);
                 }
             }
-        }
             
             // Extract metadata from all sources
             metadata = await this.extractMetadataFromAllSources(recording, tempFiles, timelineData);
             
             hasGamePlan = this.hasGamePlanIndicator(recording.topic);
-
-             // ============= ADD PATCH 7b HERE ============= //
-    // Filter out company names
-    if (metadata.coach && this.isCompanyName(metadata.coach)) {
-        console.log(`  ⚠️  Filtered out company name as coach: ${metadata.coach}`);
-        metadata.coach = null;
-        metadata.confidence.coach = 0;
-    }
-
-    if (metadata.student && this.isCompanyName(metadata.student)) {
-        console.log(`  ⚠️  Filtered out company name as student: ${metadata.student}`);
-        metadata.student = null;
-        metadata.confidence.student = 0;
-    }
-
-    // Use enhanced timeline data if available
-    if (timelineParticipants) {
-        if (timelineParticipants.isIvylevel) {
-            metadata.coach = 'Ivylevel';
-            metadata.confidence.coach = 0.9;
-            metadata.sources.coach = 'timeline_ivylevel';
-            console.log(`✓ Detected as Ivylevel recording`);
-        } else {
-            if (timelineParticipants.coach && (!metadata.coach || metadata.confidence.coach < timelineParticipants.confidence.coach)) {
-                metadata.coach = timelineParticipants.coach;
-                metadata.confidence.coach = timelineParticipants.confidence.coach;
-                metadata.sources.coach = 'timeline_enhanced';
-            }
-            
-            if (timelineParticipants.student && (!metadata.student || metadata.confidence.student < timelineParticipants.confidence.student)) {
-                metadata.student = timelineParticipants.student;
-                metadata.confidence.student = timelineParticipants.confidence.student;
-                metadata.sources.student = 'timeline_enhanced';
-            }
         }
-    }
-    // ============= END OF PATCH 7b ============= //
-}
         
         // If we couldn't extract coach/student from any source, try mappings
         if (!metadata.student && !isSiraj) {
@@ -1384,7 +1096,7 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
         const processedFiles = {};
         
         for (const tempFile of tempFiles) {
-            const standardizedName = this.generateStandardizedFileNameEnhanced(
+            const standardizedName = this.generateStandardizedFileName(
                 tempFile.type,
                 metadata.coach,
                 metadata.student,
@@ -1392,8 +1104,7 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
                 dateFolder,
                 recording.id || recording.uuid,
                 hasGamePlan,
-                isSiraj,
-                metadata.coach === 'Ivylevel' // isIvylevel parameter
+                isSiraj
             );
             
             // Copy to all three locations
@@ -1656,75 +1367,6 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
         
         return `${baseName}${suffix}${extension}`;
     }
-    // Enhanced file name generation with V100 logic
-    generateStandardizedFileNameEnhanced(fileType, coach, student, weekNumber, date, meetingId, hasGamePlan, isSiraj, isIvylevel) {
-        // Clean names - handle special characters including spaces
-        const cleanCoach = coach.replace(/[^a-zA-Z0-9\s-]/g, '_').replace(/\s+/g, ' ').trim();
-        const cleanStudent = student.replace(/[^a-zA-Z0-9\s-]/g, '_').replace(/\s+/g, ' ').trim();
-        
-        // Build base name
-        let baseName;
-        if (isSiraj) {
-            // Extract context from folder name for MISC recordings
-            const context = this.extractContextFromSirajFolder(cleanStudent);
-            if (context) {
-                baseName = `MISC_Siraj_${context}_${cleanStudent}`;
-            } else {
-                baseName = `MISC_Siraj_${cleanStudent}`;
-            }
-        } else if (isIvylevel) {
-            baseName = `Ivylevel_${cleanStudent}`;
-        } else {
-            baseName = `${cleanCoach}_${cleanStudent}`;
-        }
-        
-        // Replace spaces with underscores in base name
-        baseName = baseName.replace(/\s+/g, '_');
-        
-        // Add GamePlan if detected
-        if (hasGamePlan && !isSiraj) {
-            baseName = `${baseName}_GamePlan`;
-        }
-        
-        // Add week number if available and not Siraj
-        if (weekNumber && !isSiraj) {
-            baseName = `${baseName}_Wk${weekNumber}`;
-        }
-        
-        // Add date
-        baseName = `${baseName}_${date}`;
-        
-        // Add file type suffix and extension
-        let suffix, extension;
-        switch (fileType) {
-            case 'MP4':
-                suffix = '_Video';
-                extension = '.mp4';
-                break;
-            case 'M4A':
-                suffix = '_Audio';
-                extension = '.m4a';
-                break;
-            case 'TRANSCRIPT':
-            case 'VTT':
-                suffix = '_Transcript';
-                extension = '.vtt';
-                break;
-            case 'CHAT':
-                suffix = '_Chat';
-                extension = '.txt';
-                break;
-            case 'TIMELINE':
-                suffix = '_Timeline';
-                extension = '.json';
-                break;
-            default:
-                suffix = '';
-                extension = '';
-        }
-        
-        return `${baseName}${suffix}${extension}`;
-    }
 
     identifyStudent(recording) {
         const topic = (recording.topic || '').toLowerCase();
@@ -1766,22 +1408,10 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
     async getOrCreateFolder(parentId, folderName) {
         const cacheKey = `${parentId}/${folderName}`;
         
-        console.log('DEBUG getOrCreateFolder called with:', {
-            folderName,
-            parentId,  // <-- Changed from parentFolderId to parentId
-            expectedParent: process.env.DRIVE_ROOT_FOLDER_ID
-        });
-        
-        // If parentId is the mysterious one
-        if (parentId === '1wAaOiXWwqQdoc2xawbgG1N44u7Hl9Rgp') {  // <-- Changed to parentId
-            console.log('WARNING: Using orphaned folder ID!');
-            console.trace('Stack trace to find caller:');
-        }
-    
         if (this.folderCache.has(cacheKey)) {
             return this.folderCache.get(cacheKey);
         }
-    
+
         const query = `name='${folderName.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
         
         try {
@@ -1797,12 +1427,6 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
                 return folderId;
             }
         } catch (error) {
-            // ADD THE QUICK FIX HERE:
-            if (error.message && error.message.includes('File not found') && parentId === '1wAaOiXWwqQdoc2xawbgG1N44u7Hl9Rgp') {
-                console.log('Folder not found, using root folder instead');
-                // Recursively call with the correct parent folder
-                return this.getOrCreateFolder(process.env.DRIVE_ROOT_FOLDER_ID, folderName);
-            }
             console.error(`Error checking folder: ${error.message}`);
         }
 
@@ -1949,82 +1573,13 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
         }
         return this.updateTrackingSpreadsheetEnhanced(sessionData);
     }
-    // Helper method to check if a name is a company/organization name
-    isCompanyName(name) {
-        if (!name) return false;
-        
-        const companyIndicators = [
-            'ivy mentor', 'ivymentor', 'ivy mentors', 'ivymentors',
-            'company', 'corporation', 'corp', 'inc', 'llc', 'ltd',
-            'organization', 'org', 'institute', 'academy',
-            'services', 'consulting', 'partners', 'group'
-        ];
-        
-        const nameLower = name.toLowerCase();
-        
-        // Check if the name contains any company indicators
-        for (const indicator of companyIndicators) {
-            if (nameLower.includes(indicator)) {
-                return true;
-            }
-        }
-        
-        // Additional check: if it's exactly "Ivy Mentor" or similar
-        if (nameLower === 'ivy mentor' || nameLower === 'ivy mentors') {
-            return true;
-        }
-        
-        return false;
-    }
-
-        // Extract context from Siraj folder names
-    extractContextFromSirajFolder(folderName) {
-        // Remove common patterns and clean up
-        let cleaned = folderName
-            .replace(/siraj/gi, '')
-            .replace(/\d{10,}/, '') // Remove long numbers (meeting IDs)
-            .replace(/_+/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-        
-        // Look for context keywords
-        const contextPatterns = [
-            /checkpoint/i,
-            /review/i,
-            /planning/i,
-            /strategy/i,
-            /meeting/i,
-            /discussion/i,
-            /presentation/i
-        ];
-        
-        for (const pattern of contextPatterns) {
-            const match = cleaned.match(pattern);
-            if (match) {
-                // Also try to extract any associated name
-                const names = cleaned.match(/(?:&|and|with)\s+([A-Za-z]+)/i);
-                if (names && names[1]) {
-                    return `${match[0]}_${names[1]}`;
-                }
-                return match[0];
-            }
-        }
-        
-        // If no specific context found but there's a name
-        const nameMatch = cleaned.match(/([A-Za-z]+)/);
-        if (nameMatch && nameMatch[1].length > 2) {
-            return nameMatch[1];
-        }
-        
-        return null;
-    }
-
 }
 
-export default RecordingProcessor;
+// Export for use in other files
+module.exports = RecordingProcessor;
 
 // If run directly, process from command line
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (require.main === module) {
     const processor = new RecordingProcessor();
     
     // Example: node recording-processor.js process-webhook '{"object": {...}}'

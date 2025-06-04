@@ -2003,13 +2003,7 @@ async analyzeTranscriptEnhanced(transcriptFileId) {
 
 }
 
-// Export for use in other files
 export default RecordingProcessor;
-
-// Add CommonJS compatibility for index.js
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = RecordingProcessor;
-}
 
 // If run directly, process from command line
 if (import.meta.url === `file://${process.argv[1]}`) {

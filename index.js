@@ -1,7 +1,9 @@
-require('dotenv').config();
-const express = require('express');
-const crypto = require('crypto');
-const RecordingProcessor = require('./recording-processor');
+import dotenv from 'dotenv';
+import express from 'express';
+import crypto from 'crypto';
+import RecordingProcessor from './recording-processor.js';  // Note the .js extension
+
+dotenv.config();
 
 const app = express();
 app.use(express.json());

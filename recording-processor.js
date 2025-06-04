@@ -457,8 +457,8 @@ class RecordingProcessor {
         let stream;
         for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-                const response = await axios.get(file.download_url, {
-                    headers: { 'Authorization': `Bearer ${token}` },
+                const downloadUrl = `${file.download_url}?access_token=${token}`;
+                const response = await axios.get(downloadUrl, {
                     responseType: 'stream',
                     timeout: 300000
                 });
